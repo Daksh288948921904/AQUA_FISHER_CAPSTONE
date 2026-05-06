@@ -23,7 +23,7 @@ app.add_middleware(
 )
 @app.get("/health")
 async def health():
-    return {"status":"ok","service":"aqua shark"}
+    return {"status":"ok","service":"aqua Sentinel"}
 @app.post("/api/v1/analyse")
 async def analyze(file:UploadFile=File(...)):
     if not file.filename.lower().endswith(".pdf"):
@@ -32,6 +32,7 @@ async def analyze(file:UploadFile=File(...)):
         contents=await file.read()
         with tempfile.NamedTemporaryFile(delete=False,suffix=".pdf") as tmp:
             tmp.write(contents)
+            tmp.flush()
             tmp_path=tmp.name
             
             pdf_text=extract_text_from_pdf(tmp_path)

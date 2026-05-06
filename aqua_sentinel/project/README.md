@@ -54,12 +54,12 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 **Demo endpoint** (uses bundled synthetic data — no upload needed):
 ```bash
-curl -X POST http://localhost:8000/api/v1/analyze-demo | python -m json.tool
+curl -X POST http://localhost:8000/api/v1/analyse-demo | python -m json.tool
 ```
 
 **Upload your own PDF**:
 ```bash
-curl -X POST http://localhost:8000/api/v1/analyze \
+curl -X POST http://localhost:8000/api/v1/analyse \
   -F "file=@data/dal_lake_survey_2026-05-05.pdf" | python -m json.tool
 ```
 

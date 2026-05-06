@@ -1,260 +1,19 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-
-const ACCENT = "#00E5FF";
-const ACCENT2 = "#00BFA5";
-const DEEP = "#0A1628";
-const SURFACE = "rgba(10, 22, 40, 0.85)";
-const GLASS = "rgba(255,255,255,0.04)";
-const GLASS_BORDER = "rgba(255,255,255,0.08)";
-const TEXT_PRIMARY = "rgba(255,255,255,0.95)";
-const TEXT_SECONDARY = "rgba(255,255,255,0.55)";
-const TEXT_MUTED = "rgba(255,255,255,0.3)";
-
-// ─── Particle Canvas Background ───
-function ParticleBackground() {
-  const canvasRef = useRef(null);
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    let animId;
-    let w = (canvas.width = window.innerWidth);
-    let h = (canvas.height = window.innerHeight);
-    const particles = Array.from({ length: 80 }, () => ({
-      x: Math.random() * w,
-      y: Math.random() * h,
-      r: Math.random() * 2 + 0.5,
-      vx: (Math.random() - 0.5) * 0.3,
-      vy: -(Math.random() * 0.4 + 0.1),
-      o: Math.random() * 0.5 + 0.1,
-    }));
-    const draw = () => {
-      ctx.clearRect(0, 0, w, h);
-      particles.forEach((p) => {
-        p.x += p.vx;
-        p.y += p.vy;
-        if (p.y < -10) { p.y = h + 10; p.x = Math.random() * w; }
-        if (p.x < -10) p.x = w + 10;
-        if (p.x > w + 10) p.x = -10;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(0,229,255,${p.o})`;
-        ctx.fill();
-      });
-      // connection lines
-      for (let i = 0; i < particles.length; i++) {
-        for (let j = i + 1; j < particles.length; j++) {
-          const dx = particles[i].x - particles[j].x;
-          const dy = particles[i].y - particles[j].y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 120) {
-            ctx.beginPath();
-            ctx.moveTo(particles[i].x, particles[i].y);
-            ctx.lineTo(particles[j].x, particles[j].y);
-            ctx.strokeStyle = `rgba(0,229,255,${0.06 * (1 - dist / 120)})`;
-            ctx.lineWidth = 0.5;
-            ctx.stroke();
-          }
-        }
-      }
-      animId = requestAnimationFrame(draw);
-    };
-    draw();
-    const onResize = () => { w = canvas.width = window.innerWidth; h = canvas.height = window.innerHeight; };
-    window.addEventListener("resize", onResize);
-    return () => { cancelAnimationFrame(animId); window.removeEventListener("resize", onResize); };
-  }, []);
-  return <canvas ref={canvasRef} style={{ position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none" }} />;
-}
-
-// ─── Animated Ring / Pulse ───
-function PulseRing({ size = 200, color = ACCENT }) {
-  return (
-    <div style={{ position: "relative", width: size, height: size }}>
-      {[0, 1, 2].map((i) => (
-        <div key={i} style={{
-          position: "absolute", inset: 0, borderRadius: "50%",
-          border: `1px solid ${color}`,
-          opacity: 0.3 - i * 0.08,
-          animation: `pulse-ring 3s ease-out ${i * 0.8}s infinite`,
-        }} />
-      ))}
-      <style>{`@keyframes pulse-ring { 0% { transform: scale(0.8); opacity: 0.4; } 100% { transform: scale(1.6); opacity: 0; } }`}</style>
-    </div>
-  );
-}
-
-// ─── Glowing status dot ───
-function StatusDot({ status }) {
-  const colors = { Normal: "#00E676", Caution: "#FFD600", Critical: "#FF1744" };
-  const c = colors[status] || colors.Normal;
-  return (
-    <span style={{
-      display: "inline-block", width: 8, height: 8, borderRadius: "50%",
-      background: c, boxShadow: `0 0 8px ${c}80`, marginRight: 8, flexShrink: 0,
-    }} />
-  );
-}
-
-// ─── Glass Card ───
-function GlassCard({ children, style = {}, glow, onClick, hover = true }) {
-  const [hovered, setHovered] = useState(false);
-  return (
-    <div
-      onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        background: GLASS,
-        backdropFilter: "blur(24px) saturate(1.4)",
-        WebkitBackdropFilter: "blur(24px) saturate(1.4)",
-        border: `1px solid ${hovered && hover ? "rgba(0,229,255,0.2)" : GLASS_BORDER}`,
-        borderRadius: 16,
-        padding: "24px",
-        transition: "all 0.4s cubic-bezier(0.16, 1, 0.3, 1)",
-        transform: hovered && hover ? "translateY(-2px)" : "none",
-        boxShadow: glow ? `0 0 40px ${glow}15, inset 0 1px 0 rgba(255,255,255,0.05)` : "inset 0 1px 0 rgba(255,255,255,0.05)",
-        ...style,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-// ─── Animated Score Ring ───
-function ScoreRing({ score = 0, size = 180, label }) {
-  const [animScore, setAnimScore] = useState(0);
-  useEffect(() => {
-    let start = 0;
-    const step = () => {
-      start += (score - start) * 0.05;
-      if (Math.abs(score - start) < 0.5) { setAnimScore(score); return; }
-      setAnimScore(Math.round(start));
-      requestAnimationFrame(step);
-    };
-    requestAnimationFrame(step);
-  }, [score]);
-  const r = (size - 20) / 2;
-  const circ = 2 * Math.PI * r;
-  const offset = circ - (circ * animScore) / 100;
-  const color = score >= 70 ? "#00E676" : score >= 40 ? "#FFD600" : "#FF1744";
-  return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-      <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="8" />
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth="8"
-          strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
-          style={{ transition: "stroke-dashoffset 1.5s cubic-bezier(0.16, 1, 0.3, 1)", filter: `drop-shadow(0 0 12px ${color}60)` }}
-        />
-        <text x={size / 2} y={size / 2 + 14} textAnchor="middle" fill={TEXT_PRIMARY}
-          fontSize="42" fontWeight="300" fontFamily="'Outfit', sans-serif"
-          style={{ transform: "rotate(90deg)", transformOrigin: "center" }}>
-          {animScore}
-        </text>
-      </svg>
-      {label && <span style={{ fontSize: 13, color: TEXT_SECONDARY, letterSpacing: 2, textTransform: "uppercase" }}>{label}</span>}
-    </div>
-  );
-}
-
-// ─── Water ripple loader ───
-function WaterLoader({ text = "Analyzing..." }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 32, padding: "80px 0" }}>
-      <div style={{ position: "relative", width: 120, height: 120 }}>
-        {[0, 1, 2, 3].map(i => (
-          <div key={i} style={{
-            position: "absolute", inset: 0, borderRadius: "50%",
-            border: `1.5px solid ${ACCENT}`,
-            animation: `water-ripple 2.4s ease-out ${i * 0.5}s infinite`,
-          }} />
-        ))}
-        <div style={{
-          position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
-          width: 8, height: 8, borderRadius: "50%", background: ACCENT,
-          boxShadow: `0 0 20px ${ACCENT}80, 0 0 60px ${ACCENT}30`,
-        }} />
-      </div>
-      <div style={{ textAlign: "center" }}>
-        <p style={{ color: TEXT_PRIMARY, fontSize: 18, fontWeight: 300, margin: 0, letterSpacing: 1 }}>{text}</p>
-        <p style={{ color: TEXT_MUTED, fontSize: 13, margin: "8px 0 0", letterSpacing: 3, textTransform: "uppercase" }}>
-          Processing sensor data
-        </p>
-      </div>
-      <style>{`@keyframes water-ripple { 0% { transform: scale(0.3); opacity: 0.8; } 100% { transform: scale(1.5); opacity: 0; } }`}</style>
-    </div>
-  );
-}
-
-// ─── Typewriter text ───
-function Typewriter({ text, speed = 30, style = {} }) {
-  const [displayed, setDisplayed] = useState("");
-  useEffect(() => {
-    setDisplayed("");
-    let i = 0;
-    const iv = setInterval(() => {
-      i++;
-      setDisplayed(text.slice(0, i));
-      if (i >= text.length) clearInterval(iv);
-    }, speed);
-    return () => clearInterval(iv);
-  }, [text, speed]);
-  return <span style={style}>{displayed}<span style={{ opacity: 0.4, animation: "blink 1s step-end infinite" }}>|</span></span>;
-}
-
-// ─── MOCK ANALYSIS DATA ───
-const MOCK_ANALYSIS = {
-  report_title: "Dal Lake Water Quality Assessment",
-  location: { name: "Dal Lake, Srinagar, J&K", coordinates: { latitude: 34.0837, longitude: 74.86 }, elevation_m: 1583, geographic_context: "Dal Lake is an urban freshwater lake in the heart of Srinagar at ~1,583m ASL. It spans roughly 18 km² and serves as a critical ecological, economic, and cultural resource for the Kashmir Valley. The lake has historically suffered from eutrophication driven by agricultural runoff, houseboat sewage, and encroachment." },
-  overall_water_quality_index: { score: 62, category: "Moderate", summary: "The water quality of Dal Lake falls in the moderate range, indicating noticeable stress from nutrient loading and organic contamination. While dissolved oxygen levels support aquatic life, elevated turbidity and ammonia concentrations point to ongoing eutrophication. The lake remains below drinking water standards but meets basic recreational thresholds for most parameters." },
-  parameter_analysis: [
-    { parameter: "pH", unit: "—", stats: { min: 7.06, max: 8.65, mean: 7.82, std_dev: 0.36 }, status: "Normal", applicable_standard: "CPCB Class B: 6.5–8.5", compliance: "Compliant", interpretation: "The pH values are within the normal alkaline range expected for Dal Lake, consistent with carbonate-buffered systems at this altitude. Minor spatial variation suggests localized differences in biological activity.", health_implications: "pH levels are safe for aquatic organisms and human recreational contact." },
-    { parameter: "Turbidity", unit: "NTU", stats: { min: 3.21, max: 32.47, mean: 18.04, std_dev: 5.89 }, status: "Caution", applicable_standard: "BIS IS 10500: ≤5 NTU (drinking)", compliance: "Non-compliant", interpretation: "Turbidity is significantly elevated above drinking water standards, though this is expected for an urban lake receiving multiple inflows. Higher values in the southern sampling points suggest sediment disturbance or algal density near shore.", health_implications: "High turbidity reduces light penetration, impairing photosynthesis and potentially harboring pathogens." },
-    { parameter: "Dissolved Oxygen", unit: "mg/L", stats: { min: 3.84, max: 8.91, mean: 6.48, std_dev: 1.18 }, status: "Normal", applicable_standard: "CPCB Class B: ≥3 mg/L", compliance: "Compliant", interpretation: "DO levels are adequate for sustaining most freshwater fish species. The early-morning sampling window captures pre-photosynthetic minima, suggesting daytime values would be higher. Some samples near the 4 mg/L threshold warrant monitoring.", health_implications: "Current DO levels support aquatic biodiversity, though sustained dips below 4 mg/L could stress sensitive species." },
-    { parameter: "Temperature", unit: "°C", stats: { min: 14.22, max: 20.78, mean: 17.49, std_dev: 1.53 }, status: "Normal", applicable_standard: "No specific standard", compliance: "Compliant", interpretation: "Water temperatures are consistent with early May conditions in Kashmir at this elevation. The ~6.5°C range across samples likely reflects depth variation at dip points and proximity to inflow channels.", health_implications: "Temperature range is optimal for the native cold-water fish assemblage of Kashmir lakes." },
-    { parameter: "Conductivity", unit: "µS/cm", stats: { min: 220.15, max: 418.62, mean: 319.87, std_dev: 44.12 }, status: "Caution", applicable_standard: "Typical freshwater: 100–500 µS/cm", compliance: "Marginal", interpretation: "Conductivity values are in the upper range for freshwater systems, reflecting dissolved mineral and nutrient load. Higher readings correlate with GPS points near houseboat clusters, suggesting anthropogenic ion input.", health_implications: "Not directly harmful but indicates elevated total dissolved solids from multiple contamination pathways." },
-    { parameter: "Ammonia (NH₃-N)", unit: "mg/L", stats: { min: 0.089, max: 0.791, mean: 0.448, std_dev: 0.147 }, status: "Caution", applicable_standard: "BIS IS 10500: ≤0.5 mg/L", compliance: "Marginal", interpretation: "Mean ammonia is near the BIS drinking water limit, with several samples exceeding it. This strongly suggests organic waste input from houseboats, agricultural runoff, and possibly inadequate sewage treatment in peripheral areas.", health_implications: "Elevated ammonia at these concentrations can cause gill damage in fish and indicates fecal contamination risk for human contact." },
-    { parameter: "ORP", unit: "mV", stats: { min: 148.2, max: 278.5, mean: 210.6, std_dev: 29.8 }, status: "Normal", applicable_standard: "WHO Recreation: ≥200 mV ideal", compliance: "Marginal", interpretation: "ORP values indicate mildly oxidizing conditions overall, which is positive for microbial control. However, readings below 180 mV at some points suggest localized reducing conditions — potentially anoxic sediment pockets.", health_implications: "Adequate for general recreational safety, but low-ORP zones may support pathogen survival." },
-  ],
-  ecological_assessment: { trophic_state: "Eutrophic", trophic_justification: "Elevated turbidity, high nutrient indicators (ammonia, conductivity), and field-observed algal mats confirm eutrophic status consistent with decades of published research on Dal Lake.", biodiversity_impact: "The eutrophic state favors pollution-tolerant species over sensitive native fauna. Native Schizothorax fish populations are likely stressed.", algal_bloom_risk: "High" },
-  contamination_analysis: { likely_pollution_sources: ["Houseboat sewage discharge", "Agricultural runoff from catchment", "Urban stormwater", "Floating garden (Rad) nutrient leaching", "Inadequate municipal sewage treatment"], nutrient_loading_assessment: "Nutrient loading is significant and consistent with chronic eutrophication patterns documented by LAWDA and CSIR-IITR studies.", organic_pollution_indicators: "Ammonia levels and ORP readings in the lower range confirm active organic decomposition in parts of the lake." },
-  recommendations: {
-    immediate_actions: ["Deploy floating aerators in low-DO zones near southern shore", "Increase sampling frequency to weekly during May–September algal bloom season", "Issue advisory for houseboat clusters to verify holding tank integrity"],
-    monitoring_plan: ["Establish 3 permanent monitoring stations with telemetry buoys", "Add chlorophyll-a and total phosphorus sensors in next drone sortie", "Correlate readings with LAWDA monthly reports for trend analysis"],
-    long_term_remediation: ["Complete interceptor sewage system around lake perimeter", "Enforce floating garden (Rad) removal in designated zones", "Restore Dachigam Nallah riparian buffer zone", "Implement constructed wetlands at major inflow points"]
-  },
-  regulatory_compliance_summary: { cpcb_class: "Class B (Bathing) — Partially compliant", bis_compliance_notes: "Fails turbidity standard; ammonia at margin. Not a potable source.", who_compliance_notes: "Meets basic recreational criteria; ORP marginal at some points.", overall_compliance: "Partially Compliant" },
-  confidence_notes: "This assessment is based on a single morning sortie of 25 samples — a temporal snapshot. Diurnal DO variation, seasonal monsoon dilution, and winter stratification are not captured. Sensor accuracy is instrument-spec; no independent lab validation was performed."
-};
-
-// ─── Sensor Chip ───
-function SensorChip({ label }) {
-  const [hovered, setHovered] = useState(false);
-  return (
-    <span
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase",
-        padding: "6px 14px", borderRadius: 20,
-        border: `1px solid ${hovered ? ACCENT : GLASS_BORDER}`,
-        background: hovered ? `${ACCENT}12` : GLASS,
-        color: hovered ? ACCENT : TEXT_MUTED,
-        transition: "all 0.25s ease",
-        cursor: "default",
-        boxShadow: hovered ? `0 0 12px ${ACCENT}25` : "none",
-      }}
-    >
-      {label}
-    </span>
-  );
-}
+import { useState, useCallback, useRef } from "react";
+import { ACCENT, ACCENT2, DEEP, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED, MOCK_ANALYSIS } from "./utils/constants";
+import ParticleBackground from "./components/ParticleBackground";
+import PulseRing from "./components/PulseRing";
+import StatusDot from "./components/StatusDot";
+import GlassCard from "./components/GlassCard";
+import ScoreRing from "./components/ScoreRing";
+import WaterLoader from "./components/WaterLoader";
+import SensorChip from "./components/SensorChip";
+import LakeHeatmap from "./components/LakeHeatmap";
 
 // ─── MAIN APP ───
 export default function AquaSentinel() {
   const [phase, setPhase] = useState("landing"); // landing | confirm | loading | dashboard
   const [fileName, setFileName] = useState("");
+  const [selectedFile, setSelectedFile] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const [analysis, setAnalysis] = useState(null);
   const [fadeIn, setFadeIn] = useState(true);
@@ -271,25 +30,48 @@ export default function AquaSentinel() {
 
   const handleFile = (file) => {
     if (file && file.name.toLowerCase().endsWith(".pdf")) {
+      setSelectedFile(file);
       setFileName(file.name);
       setTimeout(() => transition("confirm"), 600);
     }
   };
 
-  const handleConfirm = (confirmed) => {
+  const handleConfirm = async (confirmed) => {
     if (confirmed) {
       transition("loading");
-      // Simulate API call — replace with actual fetch to /api/v1/analyze
-      setTimeout(() => transition("dashboard", MOCK_ANALYSIS), 4000);
+      try {
+        const formData = new FormData();
+        formData.append("file", selectedFile);
+
+        const response = await fetch("http://localhost:8000/api/v1/analyse", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        transition("dashboard", data);
+      } catch (error) {
+        console.error("Analysis failed:", error);
+        alert("Analysis failed. Please ensure the backend is running and try again.");
+        transition("landing");
+        setFileName("");
+        setSelectedFile(null);
+      }
     } else {
       transition("landing");
       setFileName("");
+      setSelectedFile(null);
     }
   };
 
   const handleReset = () => {
     transition("landing");
     setFileName("");
+    setSelectedFile(null);
     setAnalysis(null);
   };
 
@@ -618,40 +400,10 @@ export default function AquaSentinel() {
               ))}
             </div>
 
-            {/* Heatmap Placeholder */}
+            {/* Spatial Heatmap */}
             <p style={{ fontSize: 11, letterSpacing: 4, textTransform: "uppercase", color: ACCENT, margin: "32px 0 12px" }}>Spatial Heatmap</p>
-            <GlassCard hover={false} style={{
-              padding: 0, overflow: "hidden", minHeight: 400,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              background: `linear-gradient(135deg, rgba(0,229,255,0.02), rgba(0,191,165,0.02))`,
-              position: "relative",
-            }}>
-              {/* Decorative grid lines */}
-              <svg width="100%" height="400" style={{ position: "absolute", inset: 0, opacity: 0.06 }}>
-                {Array.from({ length: 20 }, (_, i) => (
-                  <line key={`h${i}`} x1="0" y1={i * 20} x2="100%" y2={i * 20} stroke={ACCENT} strokeWidth="0.5" />
-                ))}
-                {Array.from({ length: 40 }, (_, i) => (
-                  <line key={`v${i}`} x1={i * 30} y1="0" x2={i * 30} y2="400" stroke={ACCENT} strokeWidth="0.5" />
-                ))}
-              </svg>
-
-              <div style={{ textAlign: "center", zIndex: 1 }}>
-                <div style={{
-                  width: 72, height: 72, borderRadius: 18, margin: "0 auto 20px",
-                  background: `linear-gradient(135deg, ${ACCENT}10, ${ACCENT2}10)`, border: `1px dashed ${ACCENT}30`,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}>
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth="1.5" strokeLinecap="round" opacity="0.6">
-                    <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
-                    <rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" />
-                  </svg>
-                </div>
-                <p style={{ fontSize: 16, fontWeight: 400, margin: "0 0 6px", color: TEXT_SECONDARY }}>Heatmap integration coming soon</p>
-                <p style={{ fontSize: 12, color: TEXT_MUTED, margin: 0, maxWidth: 400 }}>
-                  Spatial parameter distribution across GPS coordinates will render here
-                </p>
-              </div>
+            <GlassCard hover={false} style={{ padding: 0, overflow: "hidden", minHeight: 400, position: "relative" }}>
+              <LakeHeatmap analysis={analysis} />
             </GlassCard>
 
             {/* Confidence Notes */}
