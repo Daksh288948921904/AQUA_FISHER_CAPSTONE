@@ -1,11 +1,9 @@
-import React, { useState } from "react";
-import { ACCENT, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED } from "../utils/constants";
+import { TEXT_MUTED } from "../utils/constants";
 import { MapContainer, TileLayer, CircleMarker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
+import { getCartoTileUrl } from "../utils/api";
 
 export default function LakeHeatmap({ analysis }) {
-  const [activePoint, setActivePoint] = useState(null);
-  
   if (!analysis?.spatial_heatmap || analysis.spatial_heatmap.length === 0) {
     return (
       <div style={{ textAlign: "center", padding: "40px 20px" }}>
@@ -17,6 +15,7 @@ export default function LakeHeatmap({ analysis }) {
   // Automatically center the map on the first point or average coordinates
   const centerLat = analysis.location?.coordinates?.latitude || analysis.spatial_heatmap[0].latitude;
   const centerLng = analysis.location?.coordinates?.longitude || analysis.spatial_heatmap[0].longitude;
+  const tileUrl = getCartoTileUrl();
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%", minHeight: "450px", overflow: "hidden", borderRadius: "16px" }}>
@@ -27,7 +26,8 @@ export default function LakeHeatmap({ analysis }) {
         zoomControl={false}
       >
         <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          key={tileUrl}
+          url={tileUrl}
           attribution='&copy; <a href="https://carto.com/attributions">CARTO</a>'
         />
 
@@ -43,9 +43,6 @@ export default function LakeHeatmap({ analysis }) {
                 fillColor: color,
                 fillOpacity: 0.6,
                 weight: 2
-              }}
-              eventHandlers={{
-                mouseover: () => setActivePoint(point),
               }}
             >
               <Popup>
