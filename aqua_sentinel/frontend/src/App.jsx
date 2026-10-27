@@ -397,7 +397,7 @@ export default function AquaSentinel() {
         {/* ════════ LOADING ════════ */}
         {phase === "loading" && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "calc(100vh - 64px)" }}>
-            <WaterLoader text={`Analyzing ${readings.length} sensor readings...`} />
+            <WaterLoader text="Testing sensors..." />
           </div>
         )}
 
