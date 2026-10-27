@@ -1,0 +1,43 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# Deploy via Render dashboard → New → Blueprint → select this repo.
+services:
+  # FastAPI backend: receives sensor readings and runs the LLM analysis
+  - type: web
+    name: aqua-sentinel-api
+    runtime: python
+    plan: free
+    rootDir: aqua_sentinel/project
+    buildCommand: pip install -r requirements.txt
+    # Single process on purpose: readings are stored in memory, so multiple workers would not share them
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: SOURCE_API_URL
+        sync: false
+      - key: SOURCE_API_KEY
+        sync: false
+      # Set to the frontend URL (e.g. https://aqua-sentinel.onrender.com) to lock down CORS
+      - key: CORS_ORIGINS
+        value: "*"
+
+  # React (Vite) CMS frontend
+  - type: web
+    name: aqua-sentinel
+    runtime: static
+    rootDir: aqua_sentinel/frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: NODE_VERSION
+        value: 22.16.0
+      # Backend URL, baked in at build time, e.g. https://aqua-sentinel-api.onrender.com
+      - key: VITE_API_URL
+        sync: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

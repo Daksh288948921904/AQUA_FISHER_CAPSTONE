@@ -1,14 +1,16 @@
 import pdfplumber
 from pypdf import PdfReader
-def extract_text_from_pdf(path:str)->str:
+
+
+def extract_text_from_pdf(path: str) -> str:
     try:
-        text_parts=[]
+        text_parts = []
         with pdfplumber.open(path) as pdf:
             for i, page in enumerate(pdf.pages):
-                page_text=page.extract_text()
+                page_text = page.extract_text()
                 if page_text:
                     text_parts.append(f"--- Page {i+1} ---\n{page_text}")
-                tables=page.extract_tables()
+                tables = page.extract_tables()
                 for j, table in enumerate(tables):
                     text_parts.append(f"\n[Table {j+1} on Page {i+1}]")
                     for row in table:
@@ -19,12 +21,10 @@ def extract_text_from_pdf(path:str)->str:
             return result
     except Exception:
         pass
-    reader=PdfReader(path)
-    parts=[]
+    reader = PdfReader(path)
+    parts = []
     for i, page in enumerate(reader.pages):
         t = page.extract_text()
         if t:
             parts.append(f"--- Page {i+1} ---\n{t}")
     return "\n".join(parts)
-
-                    
