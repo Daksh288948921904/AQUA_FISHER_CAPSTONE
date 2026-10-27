@@ -31,16 +31,22 @@ async def health():
 @app.post("/api/v1/readings", status_code=201)
 async def ingest_readings(payload: SensorReading | list[SensorReading]):
     readings = payload if isinstance(payload, list) else [payload]
-    total = store.add_readings(readings)
-    return {"accepted": len(readings), "total_stored": total}
+    batch = store.add_batch(readings, source="push")
+    return {"accepted": len(readings), "batch_id": batch["id"]}
 
-# The CMS polls this to display the latest readings.
+# All stored readings as one flat list.
 @app.get("/api/v1/readings")
 async def list_readings(limit: Optional[int] = Query(None, ge=1)):
     readings = store.get_readings(limit)
     return {"count": len(readings), "readings": [r.model_dump(mode="json") for r in readings]}
 
-# The CMS "Fetch Data" button: pull readings from the data-fetching system into the store.
+# The CMS shows each batch as its own block, newest first.
+@app.get("/api/v1/batches")
+async def list_batches():
+    batches = [store.serialize_batch(b) for b in reversed(store.get_batches())]
+    return {"count": len(batches), "batches": batches}
+
+# The CMS "Fetch Data" button: pull readings from the data-fetching system as a new batch.
 @app.post("/api/v1/readings/fetch")
 async def fetch_readings():
     try:
@@ -49,8 +55,10 @@ async def fetch_readings():
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Could not fetch from data source: {str(e)}")
-    total = store.add_readings(readings)
-    return {"fetched": len(readings), "skipped": skipped, "total_stored": total}
+    if not readings:
+        raise HTTPException(status_code=422, detail=f"Data source returned no valid readings ({skipped} skipped).")
+    batch = store.add_batch(readings, source="fetch")
+    return {"fetched": len(readings), "skipped": skipped, "batch": store.serialize_batch(batch)}
 
 @app.delete("/api/v1/readings")
 async def clear_readings():
@@ -60,7 +68,15 @@ async def clear_readings():
 @app.post("/api/v1/analyse")
 async def analyze(request: Optional[AnalyseRequest] = None):
     request = request or AnalyseRequest()
-    readings = request.readings or store.get_readings()
+    if request.readings:
+        readings = request.readings
+    elif request.batch_id is not None:
+        batch = next((b for b in store.get_batches() if b["id"] == request.batch_id), None)
+        if not batch:
+            raise HTTPException(status_code=404, detail=f"Batch {request.batch_id} not found.")
+        readings = batch["readings"]
+    else:
+        readings = store.get_readings()
     if not readings:
         raise HTTPException(status_code=422, detail="No sensor readings available to analyse.")
     try:

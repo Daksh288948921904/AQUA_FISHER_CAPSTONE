@@ -21,6 +21,7 @@ class SensorReading(BaseModel):
 
 
 class AnalyseRequest(BaseModel):
-    """If readings is empty, the analyser uses the readings currently in the store."""
+    """Analyse the given readings, else the stored batch_id, else every stored reading."""
     location_name: Optional[str] = None
     readings: list[SensorReading] = []
+    batch_id: Optional[int] = None

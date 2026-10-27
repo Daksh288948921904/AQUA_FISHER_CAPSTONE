@@ -85,12 +85,13 @@ Notes:
 |--------|------|-------------|
 | `GET` | `/health` | Service health check |
 | `POST` | `/api/v1/readings` | Ingest one reading or a list (data-fetching app) |
-| `GET` | `/api/v1/readings?limit=N` | List stored readings (CMS) |
+| `GET` | `/api/v1/batches` | List stored batches, newest first — one block per push/fetch (CMS) |
+| `GET` | `/api/v1/readings?limit=N` | List all stored readings as one flat list |
 | `DELETE` | `/api/v1/readings` | Clear stored readings (start a new survey) |
-| `POST` | `/api/v1/analyse` | Run LLM analysis on a given batch, or on stored readings |
+| `POST` | `/api/v1/analyse` | Run LLM analysis on given `readings`, a stored `batch_id`, or all stored readings |
 | `GET` | `/docs` | Swagger UI (auto-generated) |
 
-Readings are held in memory (up to `MAX_STORED_READINGS`, default 5000) and are lost on restart.
+Each push or fetch is stored as one batch, held in memory (up to `MAX_STORED_BATCHES`, default 50) and lost on restart. The CMS shows each batch as a block, plus one simulated sample block, and generates a report per block.
 
 ## Response Schema
 

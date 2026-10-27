@@ -13,76 +13,152 @@ import LakeHeatmap from "./components/LakeHeatmap";
 // Set VITE_API_URL at build time (e.g. https://aqua-sentinel-api.onrender.com); a bare host gets https://
 const RAW_API = (import.meta.env.VITE_API_URL || "http://localhost:8000").trim().replace(/\/+$/, "");
 const API_BASE = /^https?:\/\//.test(RAW_API) ? RAW_API : `https://${RAW_API}`;
-const POLL_MS = 3000;
 
-// ─── Simulated readings (shown until the data-fetching app pushes real data) ───
+// ─── Sample (simulated) block, shown alongside the real fetched batches ───
 const jitter = (v, amt, min, max) => Math.min(max, Math.max(min, v + (Math.random() - 0.5) * 2 * amt));
-function makeFakeReading(prev) {
-  const p = prev || { ph: 7.6, turbidity: 15, tds: 320, temperature: 17.5, latitude: 34.0837, longitude: 74.86 };
-  return {
-    timestamp: new Date().toISOString(),
-    device_id: "simulated",
-    ph: jitter(p.ph, 0.15, 6.5, 9),
-    turbidity: jitter(p.turbidity, 2, 1, 40),
-    tds: jitter(p.tds, 15, 150, 600),
-    temperature: jitter(p.temperature, 0.3, 10, 25),
-    latitude: jitter(p.latitude, 0.0008, 34.07, 34.10),
-    longitude: jitter(p.longitude, 0.0008, 74.84, 74.88),
-  };
+function makeSampleBatch(n = 15) {
+  const now = Date.now();
+  const readings = [];
+  let p = { ph: 7.6, turbidity: 15, tds: 320, temperature: 17.5, latitude: 34.0837, longitude: 74.86 };
+  for (let i = n - 1; i >= 0; i--) {
+    p = {
+      ph: jitter(p.ph, 0.15, 6.5, 9),
+      turbidity: jitter(p.turbidity, 2, 1, 40),
+      tds: jitter(p.tds, 15, 150, 600),
+      temperature: jitter(p.temperature, 0.3, 10, 25),
+      latitude: jitter(p.latitude, 0.0008, 34.07, 34.10),
+      longitude: jitter(p.longitude, 0.0008, 74.84, 74.88),
+    };
+    readings.push({ ...p, timestamp: new Date(now - i * 60000).toISOString(), device_id: "simulated" });
+  }
+  return { id: "sample", source: "sample", created_at: new Date(now).toISOString(), count: n, readings };
 }
-function makeFakeReadings(n) {
-  const out = [];
-  for (let i = 0; i < n; i++) out.push(makeFakeReading(out[i - 1]));
-  return out;
+
+const mean = (rs, k) => rs.reduce((s, r) => s + r[k], 0) / rs.length;
+const BLOCK_TITLES = { sample: "Sample Data", fetch: "Fetched Data", push: "Received Data" };
+
+// ─── Reading Block ───
+function ReadingBlock({ block, onReport }) {
+  const [open, setOpen] = useState(false);
+  const rs = block.readings;
+  const isSample = block.source === "sample";
+  return (
+    <GlassCard hover={false} style={{ width: "100%", padding: "20px 24px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <StatusDot status={isSample ? "Caution" : "Normal"} />
+          <span style={{ fontSize: 15, fontWeight: 500 }}>
+            {BLOCK_TITLES[block.source] || "Readings"}{!isSample && ` #${block.id}`}
+          </span>
+          <span style={{
+            fontSize: 10, padding: "2px 8px", borderRadius: 4, letterSpacing: 1.5, textTransform: "uppercase",
+            background: isSample ? "rgba(255,214,0,0.1)" : `${ACCENT}15`, color: isSample ? "#FFD600" : ACCENT,
+          }}>
+            {isSample ? "Simulated" : block.source === "fetch" ? "Fetched" : "Pushed"}
+          </span>
+        </div>
+        <span style={{ fontSize: 12, color: TEXT_MUTED, fontFamily: "'JetBrains Mono', monospace" }}>
+          {rs.length} reading{rs.length === 1 ? "" : "s"} · {new Date(block.created_at).toLocaleString()}
+        </span>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, marginBottom: 14 }}>
+        {[
+          ["Avg pH", mean(rs, "ph").toFixed(2)],
+          ["Avg Turbidity", `${mean(rs, "turbidity").toFixed(1)} NTU`],
+          ["Avg TDS", `${mean(rs, "tds").toFixed(0)} mg/L`],
+          ["Avg Temp", `${mean(rs, "temperature").toFixed(1)} °C`],
+          ["GPS Centre", `${mean(rs, "latitude").toFixed(4)}, ${mean(rs, "longitude").toFixed(4)}`],
+        ].map(([lbl, val]) => (
+          <div key={lbl} style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, padding: "10px 8px", textAlign: "center" }}>
+            <div style={{ fontSize: 10, color: TEXT_MUTED, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>{lbl}</div>
+            <div style={{ fontSize: 13, fontFamily: "'JetBrains Mono', monospace", fontWeight: 300 }}>{val}</div>
+          </div>
+        ))}
+      </div>
+
+      {open && (
+        <div style={{ maxHeight: 220, overflowY: "auto", marginBottom: 14 }}>
+          <table style={{ width: "100%", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", color: TEXT_SECONDARY, borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ color: TEXT_MUTED, textAlign: "left" }}>
+                {["Time", "pH", "Turb", "TDS", "Temp", "Lat", "Lon"].map(h => <th key={h} style={{ fontWeight: 400, padding: "4px 6px" }}>{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {rs.map((r, i) => (
+                <tr key={i} style={{ borderTop: `1px solid ${GLASS_BORDER}` }}>
+                  <td style={{ padding: "4px 6px" }}>{new Date(r.timestamp).toLocaleTimeString()}</td>
+                  <td style={{ padding: "4px 6px" }}>{r.ph.toFixed(2)}</td>
+                  <td style={{ padding: "4px 6px" }}>{r.turbidity.toFixed(1)}</td>
+                  <td style={{ padding: "4px 6px" }}>{r.tds.toFixed(0)}</td>
+                  <td style={{ padding: "4px 6px" }}>{r.temperature.toFixed(1)}</td>
+                  <td style={{ padding: "4px 6px" }}>{r.latitude.toFixed(4)}</td>
+                  <td style={{ padding: "4px 6px" }}>{r.longitude.toFixed(4)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 12 }}>
+        <button onClick={() => setOpen(o => !o)} style={{
+          flex: 1, padding: "12px", borderRadius: 10, border: `1px solid ${GLASS_BORDER}`, background: "rgba(255,255,255,0.03)",
+          color: TEXT_SECONDARY, cursor: "pointer", fontSize: 13, fontFamily: "'Outfit', sans-serif",
+        }}>
+          {open ? "Hide readings" : "View readings"}
+        </button>
+        <button onClick={() => onReport(block)} style={{
+          flex: 2, padding: "12px", borderRadius: 10, border: "none",
+          background: `linear-gradient(135deg, ${ACCENT}, ${ACCENT2})`, color: DEEP,
+          cursor: "pointer", fontSize: 13, fontWeight: 600, letterSpacing: 0.5, fontFamily: "'Outfit', sans-serif",
+        }}>
+          Generate Report
+        </button>
+      </div>
+    </GlassCard>
+  );
 }
 
 // ─── MAIN APP ───
 export default function AquaSentinel() {
   const [phase, setPhase] = useState("landing"); // landing | confirm | loading | dashboard
-  const [readings, setReadings] = useState([]);
-  const [simulated, setSimulated] = useState(false);
+  const [sampleBatch] = useState(() => makeSampleBatch());
+  const [batches, setBatches] = useState([]);
+  const [selected, setSelected] = useState(null);
   const [feedError, setFeedError] = useState("");
   const [analysisError, setAnalysisError] = useState("");
   const [locationName, setLocationName] = useState("");
   const [analysis, setAnalysis] = useState(null);
   const [fadeIn, setFadeIn] = useState(true);
+  const [fetching, setFetching] = useState(false);
+  const [fetchMsg, setFetchMsg] = useState(null); // { ok, text }
 
-  // Poll the live readings pushed by the data-fetching application
+  const [reloadKey, setReloadKey] = useState(0);
+
+  // Load stored batches when the landing page is shown or after a fetch (no continuous polling)
   useEffect(() => {
     if (phase !== "landing") return;
     let cancelled = false;
-    // No real data yet: seed simulated readings, then append one per poll so the feed looks live
-    const simulate = () => {
-      setSimulated(true);
-      setReadings(prev => {
-        if (!prev.length || prev[0].device_id !== "simulated") return makeFakeReadings(12);
-        return [...prev, makeFakeReading(prev[prev.length - 1])].slice(-200);
-      });
-    };
-    const load = async () => {
+    (async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/v1/readings`);
+        const res = await fetch(`${API_BASE}/api/v1/batches`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        if (cancelled) return;
-        setFeedError("");
-        if (data.readings.length) { setReadings(data.readings); setSimulated(false); }
-        else simulate();
+        if (!cancelled) { setBatches(data.batches); setFeedError(""); }
       } catch (e) {
-        if (cancelled) return;
-        setFeedError(`Cannot reach sensor feed (${e.message}) — showing simulated readings`);
-        simulate();
+        if (!cancelled) setFeedError(`Cannot reach backend (${e.message})`);
       }
-    };
-    load();
-    const iv = setInterval(load, POLL_MS);
-    return () => { cancelled = true; clearInterval(iv); };
-  }, [phase]);
+    })();
+    return () => { cancelled = true; };
+  }, [phase, reloadKey]);
 
-  const latest = readings[readings.length - 1];
+  const blocks = [...batches, sampleBatch];
+  const readings = selected?.readings || [];
   const centroid = readings.length ? {
-    lat: readings.reduce((s, r) => s + r.latitude, 0) / readings.length,
-    lon: readings.reduce((s, r) => s + r.longitude, 0) / readings.length,
+    lat: mean(readings, "latitude"),
+    lon: mean(readings, "longitude"),
   } : null;
 
   const transition = useCallback((nextPhase, data) => {
@@ -94,10 +170,7 @@ export default function AquaSentinel() {
     }, 500);
   }, []);
 
-  const [fetching, setFetching] = useState(false);
-  const [fetchMsg, setFetchMsg] = useState(null); // { ok, text }
-
-  // Pull readings from the data-fetching system via the backend, then refresh the feed
+  // Pull a new batch from the data-fetching system via the backend
   const handleFetchData = async () => {
     setFetching(true);
     setFetchMsg(null);
@@ -105,14 +178,19 @@ export default function AquaSentinel() {
       const res = await fetch(`${API_BASE}/api/v1/readings/fetch`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
-      const list = await (await fetch(`${API_BASE}/api/v1/readings`)).json();
-      if (list.readings.length) { setReadings(list.readings); setSimulated(false); }
-      setFetchMsg({ ok: true, text: `Fetched ${data.fetched} reading${data.fetched === 1 ? "" : "s"}${data.skipped ? ` (${data.skipped} invalid skipped)` : ""}` });
+      setReloadKey(k => k + 1);
+      setFetchMsg({ ok: true, text: `Fetched ${data.fetched} reading${data.fetched === 1 ? "" : "s"} into a new block${data.skipped ? ` (${data.skipped} invalid skipped)` : ""}` });
     } catch (e) {
       setFetchMsg({ ok: false, text: `Fetch failed: ${e.message}` });
     } finally {
       setFetching(false);
     }
+  };
+
+  const handleReport = (block) => {
+    setSelected(block);
+    setAnalysisError("");
+    transition("confirm");
   };
 
   const handleConfirm = async (confirmed) => {
@@ -192,7 +270,7 @@ export default function AquaSentinel() {
 
         {/* ════════ LANDING ════════ */}
         {phase === "landing" && (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "calc(100vh - 64px)", padding: "0 24px" }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "calc(100vh - 64px)", padding: "56px 24px 80px" }}>
             <div style={{ position: "absolute", top: "30%", left: "50%", transform: "translate(-50%, -50%)", opacity: 0.15 }}>
               <PulseRing size={400} />
             </div>
@@ -207,99 +285,32 @@ export default function AquaSentinel() {
               </span>
             </h1>
             <p style={{ color: TEXT_SECONDARY, fontSize: 16, maxWidth: 500, textAlign: "center", lineHeight: 1.7, margin: "0 0 48px", fontWeight: 300 }}>
-              Live readings from the drone monitoring system stream in below. Our AI analyzes pH, turbidity, TDS, temperature, and GPS coordinates in seconds.
+              Fetch readings from the drone monitoring system — each fetch arrives as its own block. Generate an AI report on pH, turbidity, TDS, temperature, and GPS for any block.
             </p>
 
-            {/* Live Readings Feed */}
-            <GlassCard hover={false} style={{ width: "100%", maxWidth: 720, padding: "24px 28px" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-                <div style={{ display: "flex", alignItems: "center" }}>
-                  <StatusDot status={feedError ? "Critical" : simulated ? "Caution" : "Normal"} />
-                  <span style={{ fontSize: 11, letterSpacing: 3, textTransform: "uppercase", color: ACCENT }}>Live Sensor Feed</span>
-                  {simulated && (
-                    <span style={{ fontSize: 10, marginLeft: 10, padding: "2px 8px", borderRadius: 4, letterSpacing: 1.5, textTransform: "uppercase", background: "rgba(255,214,0,0.1)", color: "#FFD600" }}>
-                      Simulated
-                    </span>
-                  )}
-                </div>
-                <span style={{ fontSize: 12, color: TEXT_MUTED, fontFamily: "'JetBrains Mono', monospace" }}>
-                  {readings.length} reading{readings.length === 1 ? "" : "s"}
-                </span>
+            {/* Reading Blocks */}
+            <div style={{ width: "100%", maxWidth: 760, display: "flex", flexDirection: "column", gap: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <span style={{ fontSize: 11, letterSpacing: 3, textTransform: "uppercase", color: ACCENT }}>Reading Blocks</span>
+                <button
+                  disabled={fetching}
+                  onClick={handleFetchData}
+                  style={{
+                    padding: "10px 22px", borderRadius: 10, border: `1px solid ${ACCENT}50`,
+                    background: `${ACCENT}10`, color: ACCENT, cursor: fetching ? "wait" : "pointer",
+                    fontSize: 13, fontWeight: 600, letterSpacing: 0.5, fontFamily: "'Outfit', sans-serif",
+                  }}
+                >
+                  {fetching ? "Fetching…" : "Fetch Data"}
+                </button>
               </div>
-
-              {feedError && <p style={{ fontSize: 12, color: "#FF6E6E", margin: "0 0 12px" }}>{feedError}</p>}
-              {!latest ? (
-                <p style={{ fontSize: 13, color: TEXT_MUTED, margin: 0 }}>Waiting for readings from the data-fetching application…</p>
-              ) : (
-                <>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, marginBottom: 16 }}>
-                    {[
-                      ["pH", latest.ph.toFixed(2)],
-                      ["Turbidity", `${latest.turbidity.toFixed(1)} NTU`],
-                      ["TDS", `${latest.tds.toFixed(0)} mg/L`],
-                      ["Temp", `${latest.temperature.toFixed(1)} °C`],
-                      ["GPS", `${latest.latitude.toFixed(4)}, ${latest.longitude.toFixed(4)}`],
-                    ].map(([lbl, val]) => (
-                      <div key={lbl} style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, padding: "10px 8px", textAlign: "center" }}>
-                        <div style={{ fontSize: 10, color: TEXT_MUTED, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>{lbl}</div>
-                        <div style={{ fontSize: 13, fontFamily: "'JetBrains Mono', monospace", fontWeight: 300 }}>{val}</div>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ maxHeight: 180, overflowY: "auto" }}>
-                    <table style={{ width: "100%", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", color: TEXT_SECONDARY, borderCollapse: "collapse" }}>
-                      <thead>
-                        <tr style={{ color: TEXT_MUTED, textAlign: "left" }}>
-                          {["Time", "pH", "Turb", "TDS", "Temp", "Lat", "Lon"].map(h => <th key={h} style={{ fontWeight: 400, padding: "4px 6px" }}>{h}</th>)}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {readings.slice(-20).reverse().map((r, i) => (
-                          <tr key={i} style={{ borderTop: `1px solid ${GLASS_BORDER}` }}>
-                            <td style={{ padding: "4px 6px" }}>{new Date(r.timestamp).toLocaleTimeString()}</td>
-                            <td style={{ padding: "4px 6px" }}>{r.ph.toFixed(2)}</td>
-                            <td style={{ padding: "4px 6px" }}>{r.turbidity.toFixed(1)}</td>
-                            <td style={{ padding: "4px 6px" }}>{r.tds.toFixed(0)}</td>
-                            <td style={{ padding: "4px 6px" }}>{r.temperature.toFixed(1)}</td>
-                            <td style={{ padding: "4px 6px" }}>{r.latitude.toFixed(4)}</td>
-                            <td style={{ padding: "4px 6px" }}>{r.longitude.toFixed(4)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              )}
-
-              {analysisError && <p style={{ fontSize: 13, color: "#FF6E6E", margin: "16px 0 0" }}>{analysisError}</p>}
-              {fetchMsg && <p style={{ fontSize: 13, color: fetchMsg.ok ? "#00E676" : "#FF6E6E", margin: "16px 0 0" }}>{fetchMsg.text}</p>}
-
-              <div style={{ display: "flex", gap: 12, marginTop: 20 }}>
-              <button
-                disabled={fetching}
-                onClick={handleFetchData}
-                style={{
-                  flex: 1, padding: "14px", borderRadius: 12, border: `1px solid ${ACCENT}50`,
-                  background: `${ACCENT}10`, color: ACCENT, cursor: fetching ? "wait" : "pointer",
-                  fontSize: 14, fontWeight: 600, letterSpacing: 0.5, fontFamily: "'Outfit', sans-serif",
-                }}
-              >
-                {fetching ? "Fetching…" : "Fetch Data"}
-              </button>
-              <button
-                disabled={!readings.length}
-                onClick={() => transition("confirm")}
-                style={{
-                  flex: 2, padding: "14px", borderRadius: 12, border: "none",
-                  background: readings.length ? `linear-gradient(135deg, ${ACCENT}, ${ACCENT2})` : "rgba(255,255,255,0.05)",
-                  color: readings.length ? DEEP : TEXT_MUTED, cursor: readings.length ? "pointer" : "not-allowed",
-                  fontSize: 14, fontWeight: 600, letterSpacing: 0.5, fontFamily: "'Outfit', sans-serif",
-                }}
-              >
-                Analyze {readings.length || ""} reading{readings.length === 1 ? "" : "s"}
-              </button>
-              </div>
-            </GlassCard>
+              {feedError && <p style={{ fontSize: 12, color: "#FF6E6E", margin: 0 }}>{feedError}</p>}
+              {fetchMsg && <p style={{ fontSize: 13, color: fetchMsg.ok ? "#00E676" : "#FF6E6E", margin: 0 }}>{fetchMsg.text}</p>}
+              {analysisError && <p style={{ fontSize: 13, color: "#FF6E6E", margin: 0 }}>{analysisError}</p>}
+              {blocks.map(block => (
+                <ReadingBlock key={block.id} block={block} onReport={handleReport} />
+              ))}
+            </div>
 
             {/* Sensor chips */}
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginTop: 32, maxWidth: 500 }}>
@@ -347,8 +358,10 @@ export default function AquaSentinel() {
                   </span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: 12, color: TEXT_MUTED, letterSpacing: 1.5, textTransform: "uppercase" }}>Samples</span>
-                  <span style={{ fontSize: 14 }}>{readings.length}</span>
+                  <span style={{ fontSize: 12, color: TEXT_MUTED, letterSpacing: 1.5, textTransform: "uppercase" }}>Block</span>
+                  <span style={{ fontSize: 14 }}>
+                    {selected && `${BLOCK_TITLES[selected.source] || "Readings"}${selected.source === "sample" ? "" : ` #${selected.id}`}`} · {readings.length} readings
+                  </span>
                 </div>
               </div>
 
