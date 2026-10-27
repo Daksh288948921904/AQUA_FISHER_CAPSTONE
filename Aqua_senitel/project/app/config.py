@@ -10,6 +10,9 @@ class Settings:
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o")
     openai_max_tokens: int = int(os.getenv("OPENAI_MAX_TOKENS", "4096"))
     openai_temperature: float = float(os.getenv("OPENAI_TEMPERATURE", "0.2"))
+    max_stored_readings: int = int(os.getenv("MAX_STORED_READINGS", "5000"))
+    source_api_url: str = os.getenv("SOURCE_API_URL", "")
+    source_api_key: str = os.getenv("SOURCE_API_KEY", "")
  
  
 settings = Settings()
