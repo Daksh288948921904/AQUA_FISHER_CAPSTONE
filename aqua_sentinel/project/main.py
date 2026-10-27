@@ -22,7 +22,7 @@ app.add_middleware(
 )
 @app.get("/health")
 async def health():
-    return {"status":"ok","service":"aqua shark"}
+    return {"status":"ok","service":"aqua Sentinel"}
 
 # The data-fetching application pushes readings here (one reading or a list).
 @app.post("/api/v1/readings", status_code=201)
