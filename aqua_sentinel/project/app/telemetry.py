@@ -24,14 +24,14 @@ DAL_LAKE_SECTORS = [
 # ── Input Pydantic Model (What Heltech WiFi sends: pH, Turbidity, TDS) ──
 class SensorReadingInput(BaseModel):
     device_id: Optional[str] = "heltech-lora32-01"
-    ph: Optional[float] = Field(default=None, description="pH reading from sensor (0-14)")
-    turbidity: Optional[float] = Field(default=None, description="Turbidity reading from sensor in NTU")
-    tds: Optional[float] = Field(default=None, description="Total Dissolved Solids reading from sensor in ppm")
-    conductivity: Optional[float] = Field(default=None, description="Electrical conductivity in µS/cm (optional / derived from TDS)")
+    ph: Optional[float] = Field(default=None, ge=0, le=14, description="pH reading from sensor (0-14)")
+    turbidity: Optional[float] = Field(default=None, ge=0, description="Turbidity reading from sensor in NTU")
+    tds: Optional[float] = Field(default=None, ge=0, description="Total Dissolved Solids reading from sensor in ppm")
+    conductivity: Optional[float] = Field(default=None, ge=0, description="Electrical conductivity in µS/cm (optional / derived from TDS)")
     temperature: Optional[float] = Field(default=None, description="Water temperature (mocked if omitted)")
-    latitude: Optional[float] = Field(default=None, description="GPS Latitude (mocked if omitted)")
-    longitude: Optional[float] = Field(default=None, description="GPS Longitude (mocked if omitted)")
-    battery_pct: Optional[float] = Field(default=None, description="Battery level %")
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90, description="GPS Latitude (mocked if omitted)")
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180, description="GPS Longitude (mocked if omitted)")
+    battery_pct: Optional[float] = Field(default=None, ge=0, le=100, description="Battery level %")
     rssi: Optional[int] = Field(default=None, description="Wi-Fi RSSI in dBm")
     notes: Optional[str] = None
 

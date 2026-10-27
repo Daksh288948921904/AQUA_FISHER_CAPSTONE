@@ -3,7 +3,7 @@ import GlassCard from "./GlassCard";
 import ScoreRing from "./ScoreRing";
 import WaterLoader from "./WaterLoader";
 import LakeHeatmap from "./LakeHeatmap";
-import { getApiBaseUrl } from "../utils/api";
+import { getApiBaseUrl, errorDetail } from "../utils/api";
 import {
   ACCENT,
   ACCENT2,
@@ -77,7 +77,7 @@ export default function SnapshotReportView() {
       );
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.detail || `HTTP ${res.status}`);
+        throw new Error(errorDetail(errData, res.status));
       }
       const data = await res.json();
       setAiReport(data);

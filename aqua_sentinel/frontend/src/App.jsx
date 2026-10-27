@@ -8,7 +8,7 @@ import {
   TEXT_MUTED,
   GLASS_BORDER,
 } from "./utils/constants";
-import { getApiBaseUrl } from "./utils/api";
+import { getApiBaseUrl, errorDetail } from "./utils/api";
 import ParticleBackground from "./components/ParticleBackground";
 import PulseRing from "./components/PulseRing";
 import StatusDot from "./components/StatusDot";
@@ -323,7 +323,7 @@ export default function AquaSentinel() {
         method: "POST",
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+      if (!res.ok) throw new Error(errorDetail(data, res.status));
       setReloadKey((k) => k + 1);
       setFetchMsg({
         ok: true,
@@ -390,7 +390,7 @@ export default function AquaSentinel() {
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.detail || `HTTP error ${res.status}`);
+        throw new Error(errorDetail(errData, res.status));
       }
 
       const data = await res.json();

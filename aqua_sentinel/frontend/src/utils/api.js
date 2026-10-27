@@ -11,10 +11,11 @@ export function getApiBaseUrl() {
     }
   }
 
-  // Vite environment variable
-  const envUrl = import.meta.env.VITE_API_BASE_URL;
+  // Vite environment variable (VITE_API_URL is what render.yaml sets); a bare host gets https://
+  const envUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
   if (envUrl && envUrl.trim()) {
-    return envUrl.trim().replace(/\/+$/, "");
+    const url = envUrl.trim().replace(/\/+$/, "");
+    return /^https?:\/\//.test(url) ? url : `https://${url}`;
   }
 
   // If frontend and backend are served from the exact same domain (e.g., full-stack deployment or VPS)
@@ -68,4 +69,14 @@ export function getCartoTileUrl(overrideKey = null) {
     return `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?api_key=${encodeURIComponent(key.trim())}`;
   }
   return "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+}
+
+// FastAPI returns `detail` as a string, or as a list of validation errors
+export function errorDetail(data, status) {
+  const d = data?.detail;
+  if (typeof d === "string" && d) return d;
+  if (Array.isArray(d) && d.length) {
+    return d.map((e) => `${(e.loc || []).slice(1).join(".") || "body"}: ${e.msg}`).join("; ");
+  }
+  return `HTTP ${status}`;
 }

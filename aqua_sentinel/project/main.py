@@ -10,7 +10,9 @@ from typing import Optional
 import uvicorn
 from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import ValidationError
 
 from app.analyser import analyze_water_quality
 from app.config import settings
@@ -192,16 +194,27 @@ async def analyze(
                     )
                 result = await analyze_water_quality(pdf_text)
                 return JSONResponse(content=result)
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
         finally:
             if "tmp_path" in locals() and os.path.exists(tmp_path):
                 os.unlink(tmp_path)
 
     # 2. JSON Batch Analysis (application/json)
+    # Reject malformed or invalid bodies instead of silently analysing every stored reading
+    raw_body = await request.body()
     try:
-        body = await request.json() if (await request.body()) else {}
+        body = json.loads(raw_body) if raw_body.strip() else {}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Request body is not valid JSON.")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=422, detail="Request body must be a JSON object.")
+    try:
         req_obj = AnalyseRequest(**body)
-    except Exception:
-        req_obj = AnalyseRequest()
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=jsonable_encoder(e.errors(include_url=False)))
 
     if req_obj.readings:
         readings = req_obj.readings
