@@ -7,16 +7,19 @@ from app.analyser import analyze_water_quality
 from app.models import SensorReading, AnalyseRequest
 from app.source import fetch_from_source
 from app import store
+from app.config import settings
 
 app=FastAPI(
     title="Aqua Shark Dashboard",
     version="0.2.0",
     description="Water analysis",
 )
+# Comma-separated list of allowed frontend origins, e.g. "https://aqua-sentinel.onrender.com"
+cors_origins = [o.strip().rstrip("/") for o in settings.cors_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=cors_origins,
+    allow_credentials="*" not in cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
