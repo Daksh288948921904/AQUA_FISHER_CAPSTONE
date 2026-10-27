@@ -759,7 +759,7 @@ export default function LiveTelemetryView() {
                 }}
               />
               <span style={{ fontSize: 11, color: TEXT_MUTED, marginTop: 5, display: "block", lineHeight: 1.4 }}>
-                Carto dark matter tiles load without a key by default, but an account API key can be set here or via VITE_CARTO_API_KEY.
+                Carto basemaps require an API key (passed as ?key=). Set it here, via VITE_CARTO_API_KEY, or CARTO_API_KEY on the backend.
               </span>
             </div>
 

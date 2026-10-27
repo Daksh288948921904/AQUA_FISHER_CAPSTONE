@@ -1,9 +1,29 @@
 import { TEXT_MUTED } from "../utils/constants";
 import { MapContainer, TileLayer, CircleMarker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
-import { getCartoTileUrl } from "../utils/api";
+import { useEffect, useState } from "react";
+import { getApiBaseUrl, getCartoApiKey, getCartoTileUrl, setCartoApiKey } from "../utils/api";
 
 export default function LakeHeatmap({ analysis }) {
+  // Carto tiles need a key; fall back to the backend's CARTO_API_KEY if none is saved yet
+  const [cartoKey, setCartoKeyState] = useState(getCartoApiKey());
+  useEffect(() => {
+    if (cartoKey) return;
+    let active = true;
+    fetch(`${getApiBaseUrl()}/api/v1/config`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((cfg) => {
+        if (active && cfg?.carto_api_key) {
+          setCartoApiKey(cfg.carto_api_key);
+          setCartoKeyState(cfg.carto_api_key);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [cartoKey]);
+
   if (!analysis?.spatial_heatmap || analysis.spatial_heatmap.length === 0) {
     return (
       <div style={{ textAlign: "center", padding: "40px 20px" }}>
@@ -15,7 +35,7 @@ export default function LakeHeatmap({ analysis }) {
   // Automatically center the map on the first point or average coordinates
   const centerLat = analysis.location?.coordinates?.latitude || analysis.spatial_heatmap[0].latitude;
   const centerLng = analysis.location?.coordinates?.longitude || analysis.spatial_heatmap[0].longitude;
-  const tileUrl = getCartoTileUrl();
+  const tileUrl = getCartoTileUrl(cartoKey);
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%", minHeight: "450px", overflow: "hidden", borderRadius: "16px" }}>

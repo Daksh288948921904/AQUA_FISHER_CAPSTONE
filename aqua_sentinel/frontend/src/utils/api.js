@@ -66,7 +66,7 @@ export function setCartoApiKey(key) {
 export function getCartoTileUrl(overrideKey = null) {
   const key = overrideKey !== null ? overrideKey : getCartoApiKey();
   if (key && key.trim()) {
-    return `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?api_key=${encodeURIComponent(key.trim())}`;
+    return `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(key.trim())}`;
   }
   return "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
 }
