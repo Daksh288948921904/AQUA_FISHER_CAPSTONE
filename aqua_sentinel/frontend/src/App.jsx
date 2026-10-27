@@ -1,5 +1,5 @@
-import { useState, useCallback, useRef } from "react";
-import { ACCENT, ACCENT2, DEEP, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED, MOCK_ANALYSIS } from "./utils/constants";
+import { useState, useEffect, useCallback } from "react";
+import { ACCENT, ACCENT2, DEEP, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED, GLASS_BORDER } from "./utils/constants";
 import ParticleBackground from "./components/ParticleBackground";
 import PulseRing from "./components/PulseRing";
 import StatusDot from "./components/StatusDot";
@@ -9,15 +9,79 @@ import WaterLoader from "./components/WaterLoader";
 import SensorChip from "./components/SensorChip";
 import LakeHeatmap from "./components/LakeHeatmap";
 
+// ─── API ───
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const POLL_MS = 3000;
+
+// ─── Simulated readings (shown until the data-fetching app pushes real data) ───
+const jitter = (v, amt, min, max) => Math.min(max, Math.max(min, v + (Math.random() - 0.5) * 2 * amt));
+function makeFakeReading(prev) {
+  const p = prev || { ph: 7.6, turbidity: 15, tds: 320, temperature: 17.5, latitude: 34.0837, longitude: 74.86 };
+  return {
+    timestamp: new Date().toISOString(),
+    device_id: "simulated",
+    ph: jitter(p.ph, 0.15, 6.5, 9),
+    turbidity: jitter(p.turbidity, 2, 1, 40),
+    tds: jitter(p.tds, 15, 150, 600),
+    temperature: jitter(p.temperature, 0.3, 10, 25),
+    latitude: jitter(p.latitude, 0.0008, 34.07, 34.10),
+    longitude: jitter(p.longitude, 0.0008, 74.84, 74.88),
+  };
+}
+function makeFakeReadings(n) {
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(makeFakeReading(out[i - 1]));
+  return out;
+}
+
 // ─── MAIN APP ───
 export default function AquaSentinel() {
   const [phase, setPhase] = useState("landing"); // landing | confirm | loading | dashboard
-  const [fileName, setFileName] = useState("");
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [dragOver, setDragOver] = useState(false);
+  const [readings, setReadings] = useState([]);
+  const [simulated, setSimulated] = useState(false);
+  const [feedError, setFeedError] = useState("");
+  const [analysisError, setAnalysisError] = useState("");
+  const [locationName, setLocationName] = useState("");
   const [analysis, setAnalysis] = useState(null);
   const [fadeIn, setFadeIn] = useState(true);
-  const fileRef = useRef(null);
+
+  // Poll the live readings pushed by the data-fetching application
+  useEffect(() => {
+    if (phase !== "landing") return;
+    let cancelled = false;
+    // No real data yet: seed simulated readings, then append one per poll so the feed looks live
+    const simulate = () => {
+      setSimulated(true);
+      setReadings(prev => {
+        if (!prev.length || prev[0].device_id !== "simulated") return makeFakeReadings(12);
+        return [...prev, makeFakeReading(prev[prev.length - 1])].slice(-200);
+      });
+    };
+    const load = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/readings`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (cancelled) return;
+        setFeedError("");
+        if (data.readings.length) { setReadings(data.readings); setSimulated(false); }
+        else simulate();
+      } catch (e) {
+        if (cancelled) return;
+        setFeedError(`Cannot reach sensor feed (${e.message}) — showing simulated readings`);
+        simulate();
+      }
+    };
+    load();
+    const iv = setInterval(load, POLL_MS);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [phase]);
+
+  const latest = readings[readings.length - 1];
+  const centroid = readings.length ? {
+    lat: readings.reduce((s, r) => s + r.latitude, 0) / readings.length,
+    lon: readings.reduce((s, r) => s + r.longitude, 0) / readings.length,
+  } : null;
 
   const transition = useCallback((nextPhase, data) => {
     setFadeIn(false);
@@ -28,50 +92,52 @@ export default function AquaSentinel() {
     }, 500);
   }, []);
 
-  const handleFile = (file) => {
-    if (file && file.name.toLowerCase().endsWith(".pdf")) {
-      setSelectedFile(file);
-      setFileName(file.name);
-      setTimeout(() => transition("confirm"), 600);
+  const [fetching, setFetching] = useState(false);
+  const [fetchMsg, setFetchMsg] = useState(null); // { ok, text }
+
+  // Pull readings from the data-fetching system via the backend, then refresh the feed
+  const handleFetchData = async () => {
+    setFetching(true);
+    setFetchMsg(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/readings/fetch`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+      const list = await (await fetch(`${API_BASE}/api/v1/readings`)).json();
+      if (list.readings.length) { setReadings(list.readings); setSimulated(false); }
+      setFetchMsg({ ok: true, text: `Fetched ${data.fetched} reading${data.fetched === 1 ? "" : "s"}${data.skipped ? ` (${data.skipped} invalid skipped)` : ""}` });
+    } catch (e) {
+      setFetchMsg({ ok: false, text: `Fetch failed: ${e.message}` });
+    } finally {
+      setFetching(false);
     }
   };
 
   const handleConfirm = async (confirmed) => {
-    if (confirmed) {
-      transition("loading");
-      try {
-        const formData = new FormData();
-        formData.append("file", selectedFile);
-
-        const response = await fetch("http://localhost:8000/api/v1/analyse", {
-          method: "POST",
-          body: formData,
-        });
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const data = await response.json();
-        transition("dashboard", data);
-      } catch (error) {
-        console.error("Analysis failed:", error);
-        alert("Analysis failed. Please ensure the backend is running and try again.");
-        transition("landing");
-        setFileName("");
-        setSelectedFile(null);
-      }
-    } else {
+    if (!confirmed) {
       transition("landing");
-      setFileName("");
-      setSelectedFile(null);
+      return;
+    }
+    setAnalysisError("");
+    transition("loading");
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/analyse`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ location_name: locationName.trim() || null, readings }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+      if (data.error) throw new Error(data.error);
+      transition("dashboard", data);
+    } catch (e) {
+      setAnalysisError(`Analysis failed: ${e.message}`);
+      transition("landing");
     }
   };
 
   const handleReset = () => {
     transition("landing");
-    setFileName("");
-    setSelectedFile(null);
     setAnalysis(null);
   };
 
@@ -139,55 +205,103 @@ export default function AquaSentinel() {
               </span>
             </h1>
             <p style={{ color: TEXT_SECONDARY, fontSize: 16, maxWidth: 500, textAlign: "center", lineHeight: 1.7, margin: "0 0 48px", fontWeight: 300 }}>
-              Upload your drone sensor data PDF and let our AI analyze pH, turbidity, dissolved oxygen, temperature, conductivity, ammonia, ORP, and GPS coordinates in seconds.
+              Live readings from the drone monitoring system stream in below. Our AI analyzes pH, turbidity, TDS, temperature, and GPS coordinates in seconds.
             </p>
 
-            {/* Upload Zone */}
-            <input ref={fileRef} id="pdf-upload" type="file" accept=".pdf" style={{ display: "none" }}
-              onChange={e => handleFile(e.target.files[0])} />
-            <label
-              htmlFor="pdf-upload"
-              onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={e => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files[0]); }}
-              style={{
-                width: "100%", maxWidth: 520, padding: "48px 40px",
-                border: `2px dashed ${dragOver ? ACCENT : "rgba(255,255,255,0.12)"}`,
-                borderRadius: 20, cursor: "pointer",
-                background: dragOver ? `${ACCENT}08` : "rgba(255,255,255,0.02)",
-                transition: "all 0.4s cubic-bezier(0.16, 1, 0.3, 1)",
-                display: "flex", flexDirection: "column", alignItems: "center", gap: 16,
-              }}
-            >
-              <div style={{
-                width: 64, height: 64, borderRadius: 16,
-                background: `linear-gradient(135deg, ${ACCENT}15, ${ACCENT2}15)`,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                border: `1px solid ${ACCENT}25`,
-              }}>
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth="1.5" strokeLinecap="round">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                  <line x1="12" y1="18" x2="12" y2="12" />
-                  <polyline points="9 15 12 12 15 15" />
-                </svg>
+            {/* Live Readings Feed */}
+            <GlassCard hover={false} style={{ width: "100%", maxWidth: 720, padding: "24px 28px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+                <div style={{ display: "flex", alignItems: "center" }}>
+                  <StatusDot status={feedError ? "Critical" : simulated ? "Caution" : "Normal"} />
+                  <span style={{ fontSize: 11, letterSpacing: 3, textTransform: "uppercase", color: ACCENT }}>Live Sensor Feed</span>
+                  {simulated && (
+                    <span style={{ fontSize: 10, marginLeft: 10, padding: "2px 8px", borderRadius: 4, letterSpacing: 1.5, textTransform: "uppercase", background: "rgba(255,214,0,0.1)", color: "#FFD600" }}>
+                      Simulated
+                    </span>
+                  )}
+                </div>
+                <span style={{ fontSize: 12, color: TEXT_MUTED, fontFamily: "'JetBrains Mono', monospace" }}>
+                  {readings.length} reading{readings.length === 1 ? "" : "s"}
+                </span>
               </div>
-              {fileName ? (
-                <div style={{ textAlign: "center" }}>
-                  <p style={{ fontSize: 15, fontWeight: 500, margin: 0, color: ACCENT }}>{fileName}</p>
-                  <p style={{ fontSize: 12, color: TEXT_MUTED, margin: "6px 0 0" }}>PDF loaded successfully</p>
-                </div>
+
+              {feedError && <p style={{ fontSize: 12, color: "#FF6E6E", margin: "0 0 12px" }}>{feedError}</p>}
+              {!latest ? (
+                <p style={{ fontSize: 13, color: TEXT_MUTED, margin: 0 }}>Waiting for readings from the data-fetching application…</p>
               ) : (
-                <div style={{ textAlign: "center" }}>
-                  <p style={{ fontSize: 15, fontWeight: 400, margin: 0 }}>Drop your sensor data PDF here</p>
-                  <p style={{ fontSize: 13, color: TEXT_MUTED, margin: "6px 0 0" }}>or click to browse — supports .pdf</p>
-                </div>
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, marginBottom: 16 }}>
+                    {[
+                      ["pH", latest.ph.toFixed(2)],
+                      ["Turbidity", `${latest.turbidity.toFixed(1)} NTU`],
+                      ["TDS", `${latest.tds.toFixed(0)} mg/L`],
+                      ["Temp", `${latest.temperature.toFixed(1)} °C`],
+                      ["GPS", `${latest.latitude.toFixed(4)}, ${latest.longitude.toFixed(4)}`],
+                    ].map(([lbl, val]) => (
+                      <div key={lbl} style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, padding: "10px 8px", textAlign: "center" }}>
+                        <div style={{ fontSize: 10, color: TEXT_MUTED, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>{lbl}</div>
+                        <div style={{ fontSize: 13, fontFamily: "'JetBrains Mono', monospace", fontWeight: 300 }}>{val}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ maxHeight: 180, overflowY: "auto" }}>
+                    <table style={{ width: "100%", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", color: TEXT_SECONDARY, borderCollapse: "collapse" }}>
+                      <thead>
+                        <tr style={{ color: TEXT_MUTED, textAlign: "left" }}>
+                          {["Time", "pH", "Turb", "TDS", "Temp", "Lat", "Lon"].map(h => <th key={h} style={{ fontWeight: 400, padding: "4px 6px" }}>{h}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {readings.slice(-20).reverse().map((r, i) => (
+                          <tr key={i} style={{ borderTop: `1px solid ${GLASS_BORDER}` }}>
+                            <td style={{ padding: "4px 6px" }}>{new Date(r.timestamp).toLocaleTimeString()}</td>
+                            <td style={{ padding: "4px 6px" }}>{r.ph.toFixed(2)}</td>
+                            <td style={{ padding: "4px 6px" }}>{r.turbidity.toFixed(1)}</td>
+                            <td style={{ padding: "4px 6px" }}>{r.tds.toFixed(0)}</td>
+                            <td style={{ padding: "4px 6px" }}>{r.temperature.toFixed(1)}</td>
+                            <td style={{ padding: "4px 6px" }}>{r.latitude.toFixed(4)}</td>
+                            <td style={{ padding: "4px 6px" }}>{r.longitude.toFixed(4)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
-            </label>
+
+              {analysisError && <p style={{ fontSize: 13, color: "#FF6E6E", margin: "16px 0 0" }}>{analysisError}</p>}
+              {fetchMsg && <p style={{ fontSize: 13, color: fetchMsg.ok ? "#00E676" : "#FF6E6E", margin: "16px 0 0" }}>{fetchMsg.text}</p>}
+
+              <div style={{ display: "flex", gap: 12, marginTop: 20 }}>
+              <button
+                disabled={fetching}
+                onClick={handleFetchData}
+                style={{
+                  flex: 1, padding: "14px", borderRadius: 12, border: `1px solid ${ACCENT}50`,
+                  background: `${ACCENT}10`, color: ACCENT, cursor: fetching ? "wait" : "pointer",
+                  fontSize: 14, fontWeight: 600, letterSpacing: 0.5, fontFamily: "'Outfit', sans-serif",
+                }}
+              >
+                {fetching ? "Fetching…" : "Fetch Data"}
+              </button>
+              <button
+                disabled={!readings.length}
+                onClick={() => transition("confirm")}
+                style={{
+                  flex: 2, padding: "14px", borderRadius: 12, border: "none",
+                  background: readings.length ? `linear-gradient(135deg, ${ACCENT}, ${ACCENT2})` : "rgba(255,255,255,0.05)",
+                  color: readings.length ? DEEP : TEXT_MUTED, cursor: readings.length ? "pointer" : "not-allowed",
+                  fontSize: 14, fontWeight: 600, letterSpacing: 0.5, fontFamily: "'Outfit', sans-serif",
+                }}
+              >
+                Analyze {readings.length || ""} reading{readings.length === 1 ? "" : "s"}
+              </button>
+              </div>
+            </GlassCard>
 
             {/* Sensor chips */}
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginTop: 32, maxWidth: 500 }}>
-              {["pH", "Turbidity", "DO", "Temperature", "Conductivity", "NH₃", "ORP", "GPS"].map((s) => (
+              {["pH", "Turbidity", "TDS", "Temperature", "GPS"].map((s) => (
                 <SensorChip key={s} label={s} />
               ))}
             </div>
@@ -210,24 +324,29 @@ export default function AquaSentinel() {
               </div>
               <h2 style={{ fontSize: 22, fontWeight: 400, margin: "0 0 8px" }}>Confirm survey location</h2>
               <p style={{ color: TEXT_SECONDARY, fontSize: 14, margin: "0 0 32px", lineHeight: 1.6 }}>
-                We detected the following location from your sensor data. Is this correct?
+                Location is inferred from the GPS readings. Optionally name the water body to guide the analysis.
               </p>
 
               <div style={{
                 background: "rgba(0,229,255,0.04)", border: `1px solid ${ACCENT}20`, borderRadius: 12,
                 padding: "20px", marginBottom: 32, textAlign: "left",
               }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                   <span style={{ fontSize: 12, color: TEXT_MUTED, letterSpacing: 1.5, textTransform: "uppercase" }}>Location</span>
-                  <span style={{ fontSize: 14, fontWeight: 400 }}>Dal Lake, Srinagar, J&K</span>
+                  <input value={locationName} onChange={e => setLocationName(e.target.value)} placeholder="Auto-detect from GPS" style={{
+                    background: "transparent", border: `1px solid ${GLASS_BORDER}`, borderRadius: 6, padding: "6px 10px",
+                    color: TEXT_PRIMARY, fontSize: 14, textAlign: "right", fontFamily: "'Outfit', sans-serif",
+                  }} />
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
-                  <span style={{ fontSize: 12, color: TEXT_MUTED, letterSpacing: 1.5, textTransform: "uppercase" }}>Coordinates</span>
-                  <span style={{ fontSize: 14, fontFamily: "'JetBrains Mono', monospace", fontWeight: 300, color: ACCENT }}>34.0837°N, 74.8600°E</span>
+                  <span style={{ fontSize: 12, color: TEXT_MUTED, letterSpacing: 1.5, textTransform: "uppercase" }}>GPS Centroid</span>
+                  <span style={{ fontSize: 14, fontFamily: "'JetBrains Mono', monospace", fontWeight: 300, color: ACCENT }}>
+                    {centroid && `${centroid.lat.toFixed(4)}°, ${centroid.lon.toFixed(4)}°`}
+                  </span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: 12, color: TEXT_MUTED, letterSpacing: 1.5, textTransform: "uppercase" }}>Elevation</span>
-                  <span style={{ fontSize: 14 }}>1,583 m ASL</span>
+                  <span style={{ fontSize: 12, color: TEXT_MUTED, letterSpacing: 1.5, textTransform: "uppercase" }}>Samples</span>
+                  <span style={{ fontSize: 14 }}>{readings.length}</span>
                 </div>
               </div>
 
@@ -263,7 +382,7 @@ export default function AquaSentinel() {
         {/* ════════ LOADING ════════ */}
         {phase === "loading" && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "calc(100vh - 64px)" }}>
-            <WaterLoader text="Analyzing Dal Lake sensor data..." />
+            <WaterLoader text={`Analyzing ${readings.length} sensor readings...`} />
           </div>
         )}
 
