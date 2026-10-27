@@ -1,9 +1,10 @@
 import os
 from dataclasses import dataclass
 from dotenv import load_dotenv
- 
+
 load_dotenv()
- 
+
+
 @dataclass
 class Settings:
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
@@ -14,7 +15,7 @@ class Settings:
     source_api_url: str = os.getenv("SOURCE_API_URL", "")
     source_api_key: str = os.getenv("SOURCE_API_KEY", "")
     cors_origins: str = os.getenv("CORS_ORIGINS", "*")
- 
- 
+    carto_api_key: str = os.getenv("CARTO_API_KEY", "")
+
+
 settings = Settings()
- 

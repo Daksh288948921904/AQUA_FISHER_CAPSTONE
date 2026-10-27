@@ -274,29 +274,37 @@ def compute_stats(readings: list[SensorReading]) -> dict:
     return stats
 
 
-async def analyze_water_quality(readings: list[SensorReading], location_name: str | None = None) -> dict:
+async def analyze_water_quality(data: list[SensorReading] | str, location_name: str | None = None) -> dict:
     if not settings.openai_api_key:
         raise ValueError(
             "OPENAI_API_KEY is not set. Export it as an environment variable."
         )
-    timestamps = [r.timestamp for r in readings]
-    survey = {
-        "location_name": location_name,
-        "num_samples": len(readings),
-        "start_time": min(timestamps).isoformat(),
-        "end_time": max(timestamps).isoformat(),
-        "gps_centroid": {
-            "latitude": round(statistics.fmean(r.latitude for r in readings), 6),
-            "longitude": round(statistics.fmean(r.longitude for r in readings), 6),
-        },
-        "statistics": compute_stats(readings),
-        "readings": [r.model_dump(mode="json") for r in readings],
-    }
-    user_message = (
-        "Below are the live sensor readings from a drone water-quality survey. "
-        "Analyze them thoroughly and return the JSON analysis.\n\n"
-        f"--- BEGIN SENSOR DATA ---\n{json.dumps(survey)}\n--- END SENSOR DATA ---"
-    )
+    if isinstance(data, str):
+        user_message = (
+            "Below is the text data from a drone water-quality survey (PDF or sensor survey log). "
+            "Analyze it thoroughly and return the JSON analysis.\n\n"
+            f"--- BEGIN SURVEY DATA ---\n{data}\n--- END SURVEY DATA ---"
+        )
+    else:
+        readings = data
+        timestamps = [r.timestamp for r in readings]
+        survey = {
+            "location_name": location_name,
+            "num_samples": len(readings),
+            "start_time": min(timestamps).isoformat(),
+            "end_time": max(timestamps).isoformat(),
+            "gps_centroid": {
+                "latitude": round(statistics.fmean(r.latitude for r in readings), 6),
+                "longitude": round(statistics.fmean(r.longitude for r in readings), 6),
+            },
+            "statistics": compute_stats(readings),
+            "readings": [r.model_dump(mode="json") for r in readings],
+        }
+        user_message = (
+            "Below are the live sensor readings from a drone water-quality survey. "
+            "Analyze them thoroughly and return the JSON analysis.\n\n"
+            f"--- BEGIN SENSOR DATA ---\n{json.dumps(survey)}\n--- END SENSOR DATA ---"
+        )
     payload={
         "model": settings.openai_model,
         "temperature": settings.openai_temperature,
