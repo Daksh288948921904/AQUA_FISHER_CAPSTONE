@@ -10,7 +10,9 @@ import SensorChip from "./components/SensorChip";
 import LakeHeatmap from "./components/LakeHeatmap";
 
 // ─── API ───
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+// Set VITE_API_URL at build time (e.g. https://aqua-sentinel-api.onrender.com); a bare host gets https://
+const RAW_API = (import.meta.env.VITE_API_URL || "http://localhost:8000").trim().replace(/\/+$/, "");
+const API_BASE = /^https?:\/\//.test(RAW_API) ? RAW_API : `https://${RAW_API}`;
 const POLL_MS = 3000;
 
 // ─── Simulated readings (shown until the data-fetching app pushes real data) ───

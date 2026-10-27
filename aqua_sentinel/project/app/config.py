@@ -13,6 +13,7 @@ class Settings:
     max_stored_readings: int = int(os.getenv("MAX_STORED_READINGS", "5000"))
     source_api_url: str = os.getenv("SOURCE_API_URL", "")
     source_api_key: str = os.getenv("SOURCE_API_KEY", "")
+    cors_origins: str = os.getenv("CORS_ORIGINS", "*")
  
  
 settings = Settings()

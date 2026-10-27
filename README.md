@@ -61,6 +61,24 @@ curl -X POST http://localhost:8000/api/v1/analyse \
   -d '{"location_name":"Dal Lake","readings":[{"ph":7.6,"turbidity":14.2,"tds":330,"temperature":17.8,"latitude":34.0837,"longitude":74.86}]}'
 ```
 
+## Deploy to Render
+
+The repo includes a [Render Blueprint](https://render.com/docs/blueprint-spec) (`render.yaml` at the repo root) that creates two services:
+
+| Service | Type | Root dir |
+|---------|------|----------|
+| `aqua-sentinel-api` | Python web service (FastAPI) | `aqua_sentinel/project` |
+| `aqua-sentinel` | Static site (React/Vite) | `aqua_sentinel/frontend` |
+
+1. Push to GitHub, then in Render: **New → Blueprint** → pick this repo.
+2. When prompted, fill in the secrets: `OPENAI_API_KEY`, `SOURCE_API_URL`, `SOURCE_API_KEY` (optional), and `VITE_API_URL` = the backend URL, e.g. `https://aqua-sentinel-api.onrender.com`.
+3. After the first deploy, check the backend's actual URL in the dashboard. If it differs from what you entered for `VITE_API_URL`, update it on the static site and redeploy it (Vite bakes the URL in at build time).
+4. Optional: set `CORS_ORIGINS` on the backend to the frontend URL (e.g. `https://aqua-sentinel.onrender.com`) instead of `*`.
+
+Notes:
+- Readings are kept in memory. On the free plan the backend sleeps after ~15 min idle and restarts lose stored readings; the first request after sleep takes ~30–60 s.
+- Keep the backend to a single process (no `--workers`), since the in-memory store isn't shared between processes.
+
 ## API Endpoints
 
 | Method | Path | Description |
